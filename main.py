@@ -13,17 +13,19 @@ if 'items_list' not in st.session_state:
     st.session_state.items_list = []
 
 # ==========================================
-# ADVANCED INDIAN CURRENCY PARSER (Fixed)
+# ADVANCED ERROR-TOLERANT PARSER (Handles Grammatical Speech Mistakes)
 # ==========================================
 def parse_indian_voice_text(text):
+    # Normalize speech data to lowercase
     text = text.lower().strip()
     
-    # Clean out explicit currency signs to simplify matching matrices
+    # Standardize common numeric speech contractions
+    text = re.sub(r'\b(k|grand)\b', 'thousand', text)
     text = re.sub(r'\b(rs|rupees|rupee|inr)\b', '', text)
     text = re.sub(r'\s+', ' ', text)
     
-    # 1. Primary Pattern Match Matrix Lookups
-    pattern = r"([a-z\s]+)\s+(\d+(?:\.\d+)?)\s*(lakh|lakhs|crore|crores|thousand|thousands|k)?"
+    # Regex designed to capture number values followed by singular OR plural units (e.g. thousand/thousands)
+    pattern = r"([a-z\s]+)\s+(\d+(?:\.\d+)?)\s*(crores?|lakhs?|thousands?|hundreds?)?"
     match = re.search(pattern, text)
     
     if match:
@@ -31,30 +33,34 @@ def parse_indian_voice_text(text):
         base_value = float(match.group(2))
         unit = match.group(3)
         
+        # Comprehensive unit evaluation maps
         if unit in ['lakh', 'lakhs']:
             base_value *= 100000
         elif unit in ['crore', 'crores']:
             base_value *= 10000000
-        elif unit in ['thousand', 'thousands', 'k']:
+        elif unit in ['thousand', 'thousands']:
             base_value *= 1000
+        elif unit in ['hundred', 'hundreds']:
+            base_value *= 100
             
         if not item_name:
             item_name = "⚠️ ERROR: Incomplete Input"
             
         return {"Item Name": item_name, "Price (Rs)": base_value}
         
-    # 2. Failsafe Alternative Backups (Fixed List Ingestion Syntax Bug Here)
+    # Failsafe sequence tracker if wording patterns are reversed
     numbers = re.findall(r"\b\d+(?:\.\d+)?\b", text)
     if numbers:
-        # Extract the first matching raw string value safely out from the array
         price = float(numbers[0])
         
         if "lakh" in text:
             price *= 100000
         elif "crore" in text:
             price *= 10000000
-        elif "thousand" in text or " k " in text:
+        elif "thousand" in text:
             price *= 1000
+        elif "hundred" in text:
+            price *= 100
             
         item_name = re.sub(r'\d+(?:\.\d+)?', '', text).strip().capitalize()
         if not item_name:
@@ -105,11 +111,13 @@ if audio_source_file is not None:
 # DATA SCIENCE CLEANSING GRID & REPORTLAB
 # ==========================================
 st.header("2. Data Cleansing & Validation Board")
-st.write("Review system observations. Select a row checkbox on the left and press **Delete** to clear corrupt rows.")
+
+# Explicit instruction text requested change applied below:
+st.write("Review system observations. Select a row checkbox on the left, press Delete to clear corrupt rows then click Apply Grid Adjustments & Recalculate")
 
 if st.session_state.items_list:
     data_df = pd.DataFrame(st.session_state.items_list)
-    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v3")
+    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v4")
     
     if st.button("💾 Apply Grid Adjustments & Recalculate"):
         st.session_state.items_list = edited_df.to_dict(orient="records")
