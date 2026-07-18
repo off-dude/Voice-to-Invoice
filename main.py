@@ -29,8 +29,7 @@ def parse_indian_voice_text(text):
         'hundred': 100, 'hundreds': 100
     }
     
-    # 1. Step A: Isolate the descriptive label characters from the number components
-    # Finds where the first continuous numeric token sequence begins
+    # Isolate the descriptive label characters from the number components
     num_start_match = re.search(r'\d', text)
     if not num_start_match:
         return None
@@ -42,31 +41,25 @@ def parse_indian_voice_text(text):
     if not item_name:
         item_name = "⚠️ ERROR: Incomplete Input"
         
-    # 2. Step B: Compounding accumulation loops
-    # Tokenize the numerical phrase segment (e.g., ["4", "lakh", "50", "thousand", "5", "hundred", "55"])
+    # Compounding accumulation loops
     tokens = numeric_part.split()
     
     total_price = 0.0
     current_number = None
     
     for token in tokens:
-        # Check if the token is a direct numeric digit or a decimal float value
         if token.replace('.', '', 1).isdigit():
             if current_number is not None:
-                # If we hit two numbers in a row (e.g., "... hundred 55"), accumulate the previous one
                 total_price += current_number
             current_number = float(token)
-        # Check if the token matches a scalar word unit
         elif token in multipliers:
             factor = multipliers[token]
             if current_number is not None:
                 total_price += current_number * factor
                 current_number = None
             else:
-                # Edge case handling if user says just "lakh" without a leading number unit prefix
                 total_price += 1.0 * factor
                 
-    # Add any final remaining trailing numbers (like the "55" at the very end of your string)
     if current_number is not None:
         total_price += current_number
         
@@ -133,7 +126,7 @@ st.write("Review system observations. Select a row checkbox on the left, press D
 
 if st.session_state.items_list:
     data_df = pd.DataFrame(st.session_state.items_list)
-    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v7")
+    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v8")
     
     if st.button("💾 Apply Grid Adjustments & Recalculate"):
         st.session_state.items_list = edited_df.to_dict(orient="records")
@@ -150,8 +143,11 @@ if st.session_state.items_list:
         
         pdf_buffer = io.BytesIO()
         c = canvas.Canvas(pdf_buffer)
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(200, 800, "Itemized Inventory Report")
+        
+        # Exact requested modification applied below
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(250, 800, "INVOICE") 
+        
         c.setFont("Helvetica", 12)
         y = 750
         for idx, row in final_df.iterrows():
@@ -162,6 +158,6 @@ if st.session_state.items_list:
         c.save()
         pdf_buffer.seek(0)
         
-        st.download_button(label="📥 Download Clean Report PDF", data=pdf_buffer, file_name="Items_Report.pdf", mime="application/pdf")
+        st.download_button(label="📥 Download Clean Report PDF", data=pdf_buffer, file_name="Invoice_Report.pdf", mime="application/pdf")
 else:
     st.info("The table data grid is empty. Input items using the sidebar.")
