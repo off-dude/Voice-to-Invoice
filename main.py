@@ -8,112 +8,122 @@ import re
 st.set_page_config(page_title="Voice-to-PDF Pipeline", layout="wide")
 st.title("🎙️ Dual-Input Voice Data Intelligence Pipeline")
 
-# Initialize our primary data state array
 if 'items_list' not in st.session_state:
     st.session_state.items_list = []
 
 # ==========================================
-# ADVANCED ERROR-TOLERANT PARSER
+# ADVANCED COMPOUND NUMBER PARSER (Data Science Engine)
 # ==========================================
 def parse_indian_voice_text(text):
     text = text.lower().strip()
     
-    # Standardize common numeric speech contractions
-    text = re.sub(r'\b(k|grand)\b', 'thousand', text)
+    # Clean out explicit currency signs to simplify matching
     text = re.sub(r'\b(rs|rupees|rupee|inr)\b', '', text)
     text = re.sub(r'\s+', ' ', text)
     
-    # Regex to handle singular or plural currency suffix variables
-    pattern = r"([a-z\s]+)\s+(\d+(?:\.\d+)?)\s*(crores?|lakhs?|thousands?|hundreds?)?"
-    match = re.search(pattern, text)
+    # Mapping table for compounding multiplier calculations
+    multipliers = {
+        'crore': 10000000, 'crores': 10000000,
+        'lakh': 100000, 'lakhs': 100000,
+        'thousand': 1000, 'thousands': 1000, 'k': 1000,
+        'hundred': 100, 'hundreds': 100
+    }
     
-    if match:
-        item_name = match.group(1).strip().capitalize()
-        base_value = float(match.group(2))
-        unit = match.group(3)
+    # 1. Step A: Isolate the descriptive label characters from the number components
+    # Finds where the first continuous numeric token sequence begins
+    num_start_match = re.search(r'\d', text)
+    if not num_start_match:
+        return None
         
-        if unit in ['lakh', 'lakhs']:
-            base_value *= 100000
-        elif unit in ['crore', 'crores']:
-            base_value *= 10000000
-        elif unit in ['thousand', 'thousands']:
-            base_value *= 1000
-        elif unit in ['hundred', 'hundreds']:
-            base_value *= 100
-            
-        if not item_name:
-            item_name = "⚠️ ERROR: Incomplete Input"
-            
-        return {"Item Name": item_name, "Price (Rs)": base_value}
+    start_idx = num_start_match.start()
+    item_name = text[:start_idx].strip().capitalize()
+    numeric_part = text[start_idx:].strip()
+    
+    if not item_name:
+        item_name = "⚠️ ERROR: Incomplete Input"
         
-    numbers = re.findall(r"\b\d+(?:\.\d+)?\b", text)
-    if numbers:
-        price = float(numbers[0])
+    # 2. Step B: Compounding accumulation loops
+    # Tokenize the numerical phrase segment (e.g., ["4", "lakh", "50", "thousand", "5", "hundred", "55"])
+    tokens = numeric_part.split()
+    
+    total_price = 0.0
+    current_number = None
+    
+    for token in tokens:
+        # Check if the token is a direct numeric digit or a decimal float value
+        if token.replace('.', '', 1).isdigit():
+            if current_number is not None:
+                # If we hit two numbers in a row (e.g., "... hundred 55"), accumulate the previous one
+                total_price += current_number
+            current_number = float(token)
+        # Check if the token matches a scalar word unit
+        elif token in multipliers:
+            factor = multipliers[token]
+            if current_number is not None:
+                total_price += current_number * factor
+                current_number = None
+            else:
+                # Edge case handling if user says just "lakh" without a leading number unit prefix
+                total_price += 1.0 * factor
+                
+    # Add any final remaining trailing numbers (like the "55" at the very end of your string)
+    if current_number is not None:
+        total_price += current_number
         
-        if "lakh" in text:
-            price *= 100000
-        elif "crore" in text:
-            price *= 10000000
-        elif "thousand" in text:
-            price *= 1000
-        elif "hundred" in text:
-            price *= 100
-            
-        item_name = re.sub(r'\d+(?:\.\d+)?', '', text).strip().capitalize()
-        if not item_name:
-            item_name = "⚠️ ERROR: Incomplete Input"
-            
-        return {"Item Name": item_name, "Price (Rs)": price}
+    if total_price > 0:
+        return {"Item Name": item_name, "Price (Rs)": total_price}
         
     return None
 
 # ==========================================
 # MULTI-INPUT AUDIO PROCESSING SIDEBAR
 # ==========================================
-st.sidebar.header("1. Choose Your Audio Source")
-input_mode = st.sidebar.radio("Select how to input voice data:", ["Live Microphone Recording", "Upload Audio File (.wav)"])
+st.sidebar.header("1. Choose Your Input Method")
+input_mode = st.sidebar.radio(
+    "Select Input Type:", 
+    ["Live Microphone Recording", "Upload Audio File (.wav)", "Simulate Dictation Text"]
+)
 
-audio_source_file = None
+transcribed_text = ""
 
 if input_mode == "Live Microphone Recording":
-    audio_source_file = st.sidebar.audio_input("Click to record your statement:")
-else:
-    audio_source_file = st.sidebar.file_uploader("Upload a voice note (.wav file)", type=["wav"])
+    audio_source_file = st.sidebar.audio_input("Record your statement here:")
+    if audio_source_file is not None:
+        try:
+            audio_bytes = audio_source_file.read()
+            if len(audio_bytes) > 100:
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
+                    audio_data = recognizer.record(source)
+                transcribed_text = recognizer.recognize_google(audio_data)
+        except Exception:
+            pass
 
-if audio_source_file is not None:
+elif input_mode == "Upload Audio File (.wav)":
+    audio_source_file = st.sidebar.file_uploader("Upload a voice note (.wav file)", type=["wav"])
+    if audio_source_file is not None:
+        try:
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(audio_source_file) as source:
+                audio_data = recognizer.record(source)
+            transcribed_text = recognizer.recognize_google(audio_data)
+        except Exception:
+            st.sidebar.error("Error parsing audio file format structure.")
+
+else:
+    transcribed_text = st.sidebar.text_input("Type dictation simulation text:", placeholder="Laptop 4 lakh 50 thousand")
+
+# Process Captured/Simulated strings
+if transcribed_text:
+    st.sidebar.info(f"Captured Text Stream: \"{transcribed_text}\"")
     if st.sidebar.button("🤖 Run Audio Intelligence Engine"):
-        with st.spinner("Extracting parameters and running transcription..."):
-            try:
-                # Read browser memory bytes stream channel data
-                audio_bytes = audio_source_file.read()
-                
-                # SILENCE FILTER: Skip processing entirely if audio file buffer is unpopulated or too small
-                if len(audio_bytes) < 100:
-                    st.sidebar.warning("Audio buffer initializing. Please record your voice statement before processing.")
-                else:
-                    recognizer = sr.Recognizer()
-                    audio_file_like = io.BytesIO(audio_bytes)
-                    
-                    with sr.AudioFile(audio_file_like) as source:
-                        audio_data = recognizer.record(source)
-                    
-                    transcribed_text = recognizer.recognize_google(audio_data)
-                    st.sidebar.success("Analysis Complete!")
-                    st.sidebar.info(f"Captured: \"{transcribed_text}\"")
-                    
-                    parsed_record = parse_indian_voice_text(transcribed_text)
-                    if parsed_record:
-                        st.session_state.items_list.append(parsed_record)
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Could not extract a valid item name or numeric price. Please try speaking clearer.")
-            
-            # Explicitly catch network connection timeouts or empty stream exceptions
-            except (sr.UnknownValueError, sr.RequestError):
-                st.sidebar.error("Speech recognition server connection timed out. Please check your mic connection or try speaking again.")
-            except Exception as e:
-                # Fallback to absolute silence if it's just a browser startup frame mismatch error
-                pass
+        parsed_record = parse_indian_voice_text(transcribed_text)
+        if parsed_record:
+            st.session_state.items_list.append(parsed_record)
+            st.success(f"Added: {parsed_record['Item Name']}")
+            st.rerun()
+        else:
+            st.sidebar.error("Could not isolate parameters from input text string.")
 
 # ==========================================
 # DATA SCIENCE CLEANSING GRID & REPORTLAB
@@ -123,7 +133,7 @@ st.write("Review system observations. Select a row checkbox on the left, press D
 
 if st.session_state.items_list:
     data_df = pd.DataFrame(st.session_state.items_list)
-    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v5")
+    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v7")
     
     if st.button("💾 Apply Grid Adjustments & Recalculate"):
         st.session_state.items_list = edited_df.to_dict(orient="records")
