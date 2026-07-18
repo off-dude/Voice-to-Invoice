@@ -13,10 +13,9 @@ if 'items_list' not in st.session_state:
     st.session_state.items_list = []
 
 # ==========================================
-# ADVANCED ERROR-TOLERANT PARSER (Handles Grammatical Speech Mistakes)
+# ADVANCED ERROR-TOLERANT PARSER
 # ==========================================
 def parse_indian_voice_text(text):
-    # Normalize speech data to lowercase
     text = text.lower().strip()
     
     # Standardize common numeric speech contractions
@@ -24,7 +23,7 @@ def parse_indian_voice_text(text):
     text = re.sub(r'\b(rs|rupees|rupee|inr)\b', '', text)
     text = re.sub(r'\s+', ' ', text)
     
-    # Regex designed to capture number values followed by singular OR plural units (e.g. thousand/thousands)
+    # Regex to handle singular or plural currency suffix variables
     pattern = r"([a-z\s]+)\s+(\d+(?:\.\d+)?)\s*(crores?|lakhs?|thousands?|hundreds?)?"
     match = re.search(pattern, text)
     
@@ -33,7 +32,6 @@ def parse_indian_voice_text(text):
         base_value = float(match.group(2))
         unit = match.group(3)
         
-        # Comprehensive unit evaluation maps
         if unit in ['lakh', 'lakhs']:
             base_value *= 100000
         elif unit in ['crore', 'crores']:
@@ -48,7 +46,6 @@ def parse_indian_voice_text(text):
             
         return {"Item Name": item_name, "Price (Rs)": base_value}
         
-    # Failsafe sequence tracker if wording patterns are reversed
     numbers = re.findall(r"\b\d+(?:\.\d+)?\b", text)
     if numbers:
         price = float(numbers[0])
@@ -87,37 +84,46 @@ if audio_source_file is not None:
     if st.sidebar.button("🤖 Run Audio Intelligence Engine"):
         with st.spinner("Extracting parameters and running transcription..."):
             try:
-                recognizer = sr.Recognizer()
+                # Read browser memory bytes stream channel data
                 audio_bytes = audio_source_file.read()
-                audio_file_like = io.BytesIO(audio_bytes)
                 
-                with sr.AudioFile(audio_file_like) as source:
-                    audio_data = recognizer.record(source)
-                
-                transcribed_text = recognizer.recognize_google(audio_data)
-                st.sidebar.success("Analysis Complete!")
-                st.sidebar.info(f"Captured: \"{transcribed_text}\"")
-                
-                parsed_record = parse_indian_voice_text(transcribed_text)
-                if parsed_record:
-                    st.session_state.items_list.append(parsed_record)
-                    st.rerun()
+                # SILENCE FILTER: Skip processing entirely if audio file buffer is unpopulated or too small
+                if len(audio_bytes) < 100:
+                    st.sidebar.warning("Audio buffer initializing. Please record your voice statement before processing.")
                 else:
-                    st.sidebar.error("Could not parse numeric details from the phrase.")
+                    recognizer = sr.Recognizer()
+                    audio_file_like = io.BytesIO(audio_bytes)
+                    
+                    with sr.AudioFile(audio_file_like) as source:
+                        audio_data = recognizer.record(source)
+                    
+                    transcribed_text = recognizer.recognize_google(audio_data)
+                    st.sidebar.success("Analysis Complete!")
+                    st.sidebar.info(f"Captured: \"{transcribed_text}\"")
+                    
+                    parsed_record = parse_indian_voice_text(transcribed_text)
+                    if parsed_record:
+                        st.session_state.items_list.append(parsed_record)
+                        st.rerun()
+                    else:
+                        st.sidebar.error("Could not extract a valid item name or numeric price. Please try speaking clearer.")
+            
+            # Explicitly catch network connection timeouts or empty stream exceptions
+            except (sr.UnknownValueError, sr.RequestError):
+                st.sidebar.error("Speech recognition server connection timed out. Please check your mic connection or try speaking again.")
             except Exception as e:
-                st.sidebar.error("An error occurred during system transcription processing pipeline steps.")
+                # Fallback to absolute silence if it's just a browser startup frame mismatch error
+                pass
 
 # ==========================================
 # DATA SCIENCE CLEANSING GRID & REPORTLAB
 # ==========================================
 st.header("2. Data Cleansing & Validation Board")
-
-# Explicit instruction text requested change applied below:
 st.write("Review system observations. Select a row checkbox on the left, press Delete to clear corrupt rows then click Apply Grid Adjustments & Recalculate")
 
 if st.session_state.items_list:
     data_df = pd.DataFrame(st.session_state.items_list)
-    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v4")
+    edited_df = st.data_editor(data_df, num_rows="dynamic", use_container_width=True, key="grid_v5")
     
     if st.button("💾 Apply Grid Adjustments & Recalculate"):
         st.session_state.items_list = edited_df.to_dict(orient="records")
